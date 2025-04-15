@@ -1,0 +1,83 @@
+import cv2
+import mediapipe as mp
+import pyautogui
+import time
+import math
+
+# Initialize MediaPipe Hands
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7)
+mp_draw = mp.solutions.drawing_utils
+
+# Open webcam
+cap = cv2.VideoCapture(0)
+
+# Cooldown setup
+gesture_cooldown = 1.5  # seconds
+last_gesture_time = 0
+zoom_cooldown = 1.5
+last_zoom_time = 0
+
+# Webcam preview size
+preview_width = 400
+preview_height = 300
+
+def distance(point1, point2):
+    return math.hypot(point2[0] - point1[0], point2[1] - point1[1])
+
+while True:
+    success, img = cap.read()
+    img = cv2.flip(img, 1)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    result = hands.process(img_rgb)
+
+    h, w, _ = img.shape
+    current_time = time.time()
+
+    if result.multi_hand_landmarks:
+        for handLms in result.multi_hand_landmarks:
+            mp_draw.draw_landmarks(img, handLms, mp_hands.HAND_CONNECTIONS)
+
+            # Coordinates
+            index_tip = handLms.landmark[8]
+            wrist = handLms.landmark[0]
+            thumb_tip = handLms.landmark[4]
+
+            tip_x = int(index_tip.x * w)
+            wrist_x = int(wrist.x * w)
+
+            # Slide Control
+            if current_time - last_gesture_time > gesture_cooldown:
+                if (tip_x - wrist_x) > 100:
+                    pyautogui.press('right')
+                    print("➡️ Next Slide")
+                    last_gesture_time = current_time
+                elif (wrist_x - tip_x) > 100:
+                    pyautogui.press('left')
+                    print("⬅️ Previous Slide")
+                    last_gesture_time = current_time
+
+            # Zoom Control
+            index_pos = (int(index_tip.x * w), int(index_tip.y * h))
+            thumb_pos = (int(thumb_tip.x * w), int(thumb_tip.y * h))
+            finger_dist = distance(index_pos, thumb_pos)
+
+            if current_time - last_zoom_time > zoom_cooldown:
+                if finger_dist < 40:
+                    pyautogui.hotkey('ctrl', '-')
+                    print("➖ Zoom Out")
+                    last_zoom_time = current_time
+                elif finger_dist > 100:
+                    pyautogui.hotkey('ctrl', '+')
+                    print("➕ Zoom In")
+                    last_zoom_time = current_time
+
+    # Preview in corner
+    preview = cv2.resize(img, (preview_width, preview_height))
+    cv2.imshow("👋 Gesture Control", preview)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
